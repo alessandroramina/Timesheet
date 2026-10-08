@@ -1,0 +1,328 @@
+{% extends "base.html" %}
+{% block title %}Timesheet — {{ user.name }}{% endblock %}
+{% block main_class %}wide{% endblock %}
+{% block content %}
+
+  {% if dry_run %}
+    <p class="banner banner-dryrun">Modalità DRY-RUN: nessuna scrittura reale su monday.com. Le voci vengono solo loggate.</p>
+  {% endif %}
+
+  {% if error %}<p class="banner banner-error">{{ error }}</p>{% endif %}
+
+  {% if result %}
+    {% if result.dry_run %}
+      <p class="banner banner-ok">Simulazione completata: ecco cosa verrebbe inviato a monday.com.</p>
+      <pre class="payload">{{ result.payload }}</pre>
+    {% else %}
+      <p class="banner banner-ok">Voce di timesheet creata su monday.com (item {{ result.item.id }}).</p>
+    {% endif %}
+  {% endif %}
+
+  {% if timer %}
+    <div class="card timer-card">
+      <p class="hint">Timer in corso dalle <strong id="timer-start-label"></strong></p>
+      <p class="timer-elapsed" id="timer-elapsed">00:00:00</p>
+      <p>{{ timer.categoria }} · {{ timer.task_nome }}{% if timer.project_name %} · {{ timer.project_name }}{% endif %}</p>
+      <form method="post" action="{{ url_for('timer_stop') }}">
+        <button type="submit">⏹ Stop</button>
+      </form>
+    </div>
+    <script>
+      const startMs = new Date("{{ timer.start_iso }}").getTime();
+      document.getElementById('timer-start-label').textContent =
+        new Date(startMs).toLocaleTimeString('it-IT', {hour: '2-digit', minute: '2-digit'});
+      function tickTimer() {
+        const diff = Math.max(Date.now() - startMs, 0);
+        const h = String(Math.floor(diff / 3600000)).padStart(2, '0');
+        const m = String(Math.floor((diff % 3600000) / 60000)).padStart(2, '0');
+        const s = String(Math.floor((diff % 60000) / 1000)).padStart(2, '0');
+        document.getElementById('timer-elapsed').textContent = `${h}:${m}:${s}`;
+      }
+      tickTimer();
+      setInterval(tickTimer, 1000);
+    </script>
+  {% else %}
+    <div class="crumbs" id="crumbs">
+      <span class="crumb crumb-categoria" id="crumb-categoria"></span>
+      <span class="crumb crumb-task" id="crumb-task"></span>
+      <span class="crumb crumb-progetto" id="crumb-progetto"></span>
+    </div>
+
+    <div class="layout">
+      <form method="post" class="card" id="entry-form">
+        <label for="categoria">Categoria attività</label>
+        <select id="categoria" name="categoria" required>
+          <option value="" disabled selected>Seleziona una categoria…</option>
+          {% for cat in task_catalog.keys() %}
+            <option value="{{ cat }}">{{ cat }}</option>
+          {% endfor %}
+        </select>
+
+        <label for="task_nome">Attività</label>
+        <select id="task_nome" name="task_nome" required>
+          <option value="" disabled selected>Seleziona prima una categoria…</option>
+        </select>
+
+        <label for="macro_categoria">Macro Categoria <span class="hint-inline">(filtro Nome Prodotto)</span></label>
+        <select id="macro_categoria">
+          <option value="">Tutte</option>
+          {% for m in macro_categoria_options %}<option value="{{ m }}">{{ m }}</option>{% endfor %}
+        </select>
+
+        <label for="categoria_prodotto">Categoria Prodotto <span class="hint-inline">(filtro Nome Prodotto)</span></label>
+        <select id="categoria_prodotto">
+          <option value="">Tutte</option>
+          {% for c in categoria_prodotto_options %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+        </select>
+
+        <label for="project_id">Nome Prodotto (progetto, opzionale)</label>
+        <select id="project_id" name="project_id">
+          <option value="">—</option>
+        </select>
+        <input type="hidden" id="project_name" name="project_name">
+
+        <label for="data">Data</label>
+        <input type="date" id="data" name="data" value="{{ today }}" max="{{ today }}" required>
+
+        <label for="ore">Ore lavorate</label>
+        <input type="number" id="ore" name="ore" min="0.25" max="24" step="0.25" value="{{ prefill.ore if prefill else '' }}">
+        <div class="quick-hours">
+          <button type="button" data-add="0.5">+0,5</button>
+          <button type="button" data-add="1">+1</button>
+          <button type="button" data-add="4">+4</button>
+          <button type="button" data-set="4">Mezza giornata</button>
+          <button type="button" id="fill-day">Riempi giornata</button>
+        </div>
+
+        <label for="note">Note tecniche</label>
+        <textarea id="note" name="note" rows="3"></textarea>
+
+        <div class="actions">
+          <button type="submit" formaction="{{ url_for('timer_start') }}" formnovalidate class="btn-secondary">▶ Avvia timer</button>
+          <button type="submit" formaction="{{ url_for('submit') }}">Registra adesso</button>
+        </div>
+      </form>
+
+      <div class="card impact-card">
+        <span class="impact-title">Impatto in tempo reale</span>
+
+        <div class="impact-block">
+          <div class="impact-block-head">
+            <span>Capacità del <strong id="impact-date-label"></strong></span>
+            <span class="value" id="impact-residuo-label">—</span>
+          </div>
+          <div class="bar">
+            <div class="bar-seg registrate" id="bar-registrate"></div>
+            <div class="bar-seg questo" id="bar-questo"></div>
+          </div>
+          <div class="bar-legend">
+            <span class="l-registrate">Registrate <span id="legend-registrate">0h</span></span>
+            <span class="l-questo">Questa voce <span id="legend-questo">0h</span></span>
+            <span class="l-residuo">Residuo <span id="legend-residuo">0h</span></span>
+          </div>
+        </div>
+
+        <span class="status-chip" id="status-chip">—</span>
+
+        <p class="hint">Budget di progetto non disponibile: nessun "Effort Preventivato" è ancora impostato sui progetti in Portfolio.</p>
+      </div>
+    </div>
+  {% endif %}
+
+  <script>
+    const TASK_CATALOG = {{ task_catalog | tojson }};
+    const PROJECTS = {{ projects | tojson }};
+    const PREFILL = {{ (prefill or {}) | tojson }};
+    const CATEGORIA_OPTIONS_ALL = {{ categoria_prodotto_options | tojson }};
+    const DAILY_CAPACITY = {{ daily_capacity | tojson }};
+    let REGISTRATE_OGGI = {{ registrate_oggi | tojson }};
+
+    const categoriaSel = document.getElementById('categoria');
+    const taskSel = document.getElementById('task_nome');
+    const crumbCategoria = document.getElementById('crumb-categoria');
+    const crumbTask = document.getElementById('crumb-task');
+    const crumbProgetto = document.getElementById('crumb-progetto');
+
+    function updateCrumb(el, text) {
+      if (!el) return;
+      if (text) { el.textContent = text; el.classList.add('show'); }
+      else { el.classList.remove('show'); }
+    }
+
+    function fillTasks(categoria, selected) {
+      if (!taskSel) return;
+      const tasks = TASK_CATALOG[categoria] || [];
+      if (!tasks.length) {
+        taskSel.innerHTML = '<option value="" disabled selected>Nessuna attività per questa categoria</option>';
+        return;
+      }
+      taskSel.innerHTML = '<option value="" disabled' + (selected ? '' : ' selected') + '>Seleziona un\'attività…</option>'
+        + tasks.map(t => `<option value="${t}"${t === selected ? ' selected' : ''}>${t}</option>`).join('');
+    }
+
+    if (categoriaSel) {
+      updateCrumb(crumbCategoria, categoriaSel.value);
+      categoriaSel.addEventListener('change', () => {
+        fillTasks(categoriaSel.value, null);
+        updateCrumb(crumbCategoria, categoriaSel.value);
+        updateCrumb(crumbTask, '');
+      });
+      if (taskSel) {
+        taskSel.addEventListener('change', () => updateCrumb(crumbTask, taskSel.value));
+      }
+      if (PREFILL.categoria) {
+        categoriaSel.value = PREFILL.categoria;
+        fillTasks(PREFILL.categoria, PREFILL.task_nome);
+        updateCrumb(crumbCategoria, PREFILL.categoria);
+        updateCrumb(crumbTask, PREFILL.task_nome);
+      }
+    }
+
+    const macroSel = document.getElementById('macro_categoria');
+    const catProdSel = document.getElementById('categoria_prodotto');
+    const projectSel = document.getElementById('project_id');
+    const projectNameInput = document.getElementById('project_name');
+
+    function fillProjects() {
+      if (!projectSel) return;
+      const desired = projectSel.value || PREFILL.project_id || '';
+      const macro = macroSel ? macroSel.value : '';
+      const cat = catProdSel ? catProdSel.value : '';
+      const filtered = PROJECTS.filter(p =>
+        (!macro || (p.macro_categoria || '').includes(macro)) &&
+        (!cat || (p.categoria_prodotto || '').includes(cat))
+      );
+      projectSel.innerHTML = '<option value="">—</option>'
+        + filtered.map(p => `<option value="${p.id}"${String(desired) === String(p.id) ? ' selected' : ''}>${p.name}</option>`).join('');
+      const opt = projectSel.options[projectSel.selectedIndex];
+      projectNameInput.value = opt.value ? opt.text : (String(desired) ? (PREFILL.project_name || '') : '');
+      updateCrumb(crumbProgetto, opt.value ? opt.text : '');
+    }
+
+    function availableCategorie(macro) {
+      if (!macro) return CATEGORIA_OPTIONS_ALL;
+      const present = new Set(
+        PROJECTS.filter(p => (p.macro_categoria || '').includes(macro) && p.categoria_prodotto)
+          .map(p => p.categoria_prodotto)
+      );
+      const ordered = CATEGORIA_OPTIONS_ALL.filter(c => present.has(c));
+      const extra = [...present].filter(c => !CATEGORIA_OPTIONS_ALL.includes(c));
+      return ordered.concat(extra);
+    }
+
+    function refreshCategoriaOptions() {
+      if (!catProdSel) return;
+      const macro = macroSel ? macroSel.value : '';
+      const current = catProdSel.value;
+      const opts = availableCategorie(macro);
+      catProdSel.innerHTML = '<option value="">Tutte</option>'
+        + opts.map(c => `<option value="${c}"${c === current ? ' selected' : ''}>${c}</option>`).join('');
+      if (!opts.includes(current)) catProdSel.value = '';
+    }
+
+    function applyProductTags() {
+      const selected = PROJECTS.find(p => String(p.id) === String(projectSel.value));
+      if (!selected) return;
+      const primaryMacro = (selected.macro_categoria || '').split(',')[0].trim();
+      if (primaryMacro && macroSel && [...macroSel.options].some(o => o.value === primaryMacro)) {
+        macroSel.value = primaryMacro;
+      }
+      refreshCategoriaOptions();
+      if (selected.categoria_prodotto && catProdSel
+          && [...catProdSel.options].some(o => o.value === selected.categoria_prodotto)) {
+        catProdSel.value = selected.categoria_prodotto;
+      }
+    }
+
+    if (projectSel) {
+      if (macroSel) macroSel.addEventListener('change', () => { refreshCategoriaOptions(); fillProjects(); });
+      if (catProdSel) catProdSel.addEventListener('change', fillProjects);
+      projectSel.addEventListener('change', () => {
+        applyProductTags();
+        fillProjects();
+      });
+      refreshCategoriaOptions();
+      fillProjects();
+    }
+
+    // --- Tasti rapidi ore + pannello Impatto in tempo reale ---
+    const oreInput = document.getElementById('ore');
+    const dataInput = document.getElementById('data');
+
+    function roundQuarter(n) { return Math.round(n * 4) / 4; }
+
+    document.querySelectorAll('.quick-hours button[data-add]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const current = parseFloat(oreInput.value) || 0;
+        oreInput.value = roundQuarter(current + parseFloat(btn.dataset.add));
+        updateImpact();
+      });
+    });
+    document.querySelectorAll('.quick-hours button[data-set]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        oreInput.value = btn.dataset.set;
+        updateImpact();
+      });
+    });
+    const fillDayBtn = document.getElementById('fill-day');
+    if (fillDayBtn) {
+      fillDayBtn.addEventListener('click', () => {
+        const residuo = Math.max(DAILY_CAPACITY - REGISTRATE_OGGI, 0);
+        oreInput.value = roundQuarter(residuo);
+        updateImpact();
+      });
+    }
+
+    function updateImpact() {
+      const ore = parseFloat(oreInput.value) || 0;
+      const registrate = REGISTRATE_OGGI;
+      const totale = registrate + ore;
+      const residuo = DAILY_CAPACITY - totale;
+      const pctRegistrate = Math.min(registrate / DAILY_CAPACITY, 1) * 100;
+      const pctQuesto = Math.min(Math.max(ore, 0) / DAILY_CAPACITY, 1 - pctRegistrate / 100) * 100;
+
+      document.getElementById('bar-registrate').style.width = pctRegistrate + '%';
+      document.getElementById('bar-questo').style.width = pctQuesto + '%';
+      document.getElementById('legend-registrate').textContent = registrate + 'h';
+      document.getElementById('legend-questo').textContent = ore + 'h';
+      document.getElementById('legend-residuo').textContent = Math.max(residuo, 0) + 'h';
+
+      const residuoLabel = document.getElementById('impact-residuo-label');
+      residuoLabel.textContent = (residuo >= 0 ? residuo : residuo) + 'h residue';
+      residuoLabel.classList.toggle('warn', residuo < 0);
+
+      const chip = document.getElementById('status-chip');
+      if (residuo < 0) {
+        chip.textContent = `⚠ Superi la capacità di ${Math.abs(residuo)}h`;
+        chip.className = 'status-chip warn';
+      } else {
+        chip.textContent = `✓ OK · rientra nella capacità`;
+        chip.className = 'status-chip ok';
+      }
+    }
+
+    if (oreInput) {
+      oreInput.addEventListener('input', updateImpact);
+      const dateLabel = document.getElementById('impact-date-label');
+      function setDateLabel() {
+        if (dateLabel) dateLabel.textContent = new Date(dataInput.value + 'T00:00:00').toLocaleDateString('it-IT');
+      }
+      setDateLabel();
+      updateImpact();
+      if (dataInput) {
+        dataInput.addEventListener('change', () => {
+          setDateLabel();
+          fetch(`{{ url_for('api_capacity') }}?data=${dataInput.value}`)
+            .then(r => r.json())
+            .then(d => {
+              if (typeof d.registrate === 'number') {
+                REGISTRATE_OGGI = d.registrate;
+                updateImpact();
+              }
+            })
+            .catch(() => {});
+        });
+      }
+    }
+  </script>
+{% endblock %}

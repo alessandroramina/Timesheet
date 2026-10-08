@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Login — Timesheet{% endblock %}
+{% block content %}
+  <form method="post" class="card login-form">
+    <label for="email">Email monday.com</label>
+    <input type="email" id="email" name="email" placeholder="nome.cognome@lagodesign.com" required autofocus>
+    <button type="submit">Entra</button>
+    {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  </form>
+  <p class="hint">Prototipo interno — accesso riconosciuto via email monday.com, nessuna password.</p>
+{% endblock %}

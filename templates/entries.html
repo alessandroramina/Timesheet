@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Le mie voci — Timesheet{% endblock %}
+{% block main_class %}wide{% endblock %}
+{% block content %}
+
+  {% if dry_run %}
+    <p class="banner banner-dryrun">Modalità DRY-RUN: le modifiche vengono solo loggate, nessuna scrittura reale.</p>
+  {% endif %}
+  {% if error %}<p class="banner banner-error">{{ error }}</p>{% endif %}
+
+  <div class="card">
+    {% if not groups %}
+      <p class="empty-state">Nessuna voce registrata.</p>
+    {% endif %}
+    {% for g in groups %}
+      <div class="day-group">
+        <div class="day-heading">{{ g.data }}</div>
+        {% for e in g.voci %}
+          <div class="entry-row">
+            <div class="entry-main">
+              <span class="entry-note">{{ e.note }}</span>
+              <span class="entry-sub">{% if e.progetto_nome %}{{ e.progetto_nome }} · {% endif %}{{ e.ore }}h</span>
+            </div>
+            <div class="entry-actions">
+              {% if e.editable %}
+                <a href="{{ url_for('edit_entry', item_id=e.id) }}">Modifica</a>
+              {% else %}
+                <span class="lock-badge">🔒 bloccata</span>
+              {% endif %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% endfor %}
+  </div>
+
+  <p class="hint">Una voce è modificabile solo entro 7 giorni dalla data a cui si riferisce.</p>
+{% endblock %}
