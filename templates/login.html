@@ -4,8 +4,12 @@
   <form method="post" class="card login-form">
     <label for="email">Email monday.com</label>
     <input type="email" id="email" name="email" placeholder="nome.cognome@lagodesign.com" required autofocus>
+    {% if require_passphrase %}
+    <label for="passphrase">Passphrase di accesso</label>
+    <input type="password" id="passphrase" name="passphrase" required>
+    {% endif %}
     <button type="submit">Entra</button>
     {% if error %}<p class="error">{{ error }}</p>{% endif %}
   </form>
-  <p class="hint">Prototipo interno — accesso riconosciuto via email monday.com, nessuna password.</p>
+  <p class="hint">Prototipo interno — accesso riconosciuto via email monday.com{{ ", più passphrase condivisa" if require_passphrase else ", nessuna password" }}.</p>
 {% endblock %}

@@ -7,6 +7,14 @@ MONDAY_API_TOKEN = os.environ.get("MONDAY_API_TOKEN", "")
 FLASK_SECRET_KEY = os.environ.get("FLASK_SECRET_KEY", "dev-only-change-me")
 DRY_RUN = os.environ.get("DRY_RUN", "true").lower() != "false"
 
+# Passphrase condivisa richiesta al login oltre all'email, pensata per quando
+# l'app non resta più confinata alla rete interna Lago ma diventa raggiungibile
+# da internet (hosting pubblico collegato al repo GitHub): senza, chiunque
+# conoscesse un'email @lago.it valida potrebbe accedere come quella persona
+# (decisione utente 09.10.2026). Vuota = nessuna passphrase richiesta (comodo
+# solo quando l'app gira esclusivamente sulla rete interna).
+APP_SHARED_PASSPHRASE = os.environ.get("APP_SHARED_PASSPHRASE", "")
+
 # Una voce di Timesheet è modificabile solo entro questo numero di giorni
 # dalla data a cui si riferisce; oltre, resta bloccata (richiesta utente
 # 07.10.2026, scheda "Le mie voci").
@@ -236,14 +244,9 @@ STANDARD_PRODUCTS = [
     {"name": n, "macro_categorie": ["Kitchen"], "categoria_prodotto": "Kitchen - Tops"}
     for n in ["Breakfast bars", "Peninsulas", "Top"]
 ] + [
-    # ATTENZIONE: nessuna etichetta "Bathroom ..." esiste nel dropdown Categoria
-    # Prodotto di Concept (solo le "Kitchen - ..." sono specifiche per reparto;
-    # per Bathroom non c'è un equivalente "Bathroom - Base Unit"). Non ho
-    # inventato una nuova etichetta dropdown (richiesta esplicita: non
-    # modificare le categorie prodotto) — questi prodotti sono quindi tracciati
-    # col testo letterale "Bathroom Base Units", che però non comparirà mai
-    # filtrando per Categoria Prodotto (nessuna opzione corrisponde), solo con
-    # "Tutte". Da chiarire con l'utente se serve una soluzione diversa.
+    # "Bathroom Base Units" aggiunta come nuova etichetta reale alla colonna
+    # Categoria Prodotto di Concept su richiesta utente (09.10.2026), sulla
+    # base di questa stessa fonte Gamma_Prodotti_Standard (id label monday: 29).
     {"name": n, "macro_categorie": ["Bathroom"], "categoria_prodotto": "Bathroom Base Units"}
     for n in ["36e8 CUT bathroom base unit", "36e8 bathroom base unit", "Bathroom base unit feature"]
 ]

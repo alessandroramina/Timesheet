@@ -22,6 +22,27 @@ L'app parte in **DRY-RUN** (`.env` → `DRY_RUN=true`): le voci di timesheet
 vengono solo loggate in console, nessuna scrittura reale su monday.com.
 Passa a `DRY_RUN=false` solo dopo aver verificato lo schema reale (vedi sotto).
 
+## Deploy pubblico (Render, collegato a questo repo GitHub)
+
+Per avere un link stabile raggiungibile anche da fuori la rete Lago, senza
+tenere un PC sempre acceso:
+
+1. Crea un account su [render.com](https://render.com) (gratuito per un
+   prototipo) e collega il repo GitHub `alessandroramina/Timesheet`.
+2. Nuovo **Web Service** da quel repo. Render rileva automaticamente il
+   `Procfile` incluso (`gunicorn app:app`); se chiede la root directory,
+   indica `APP/Timesheet`.
+3. Imposta le variabili d'ambiente nel pannello Render (mai nel codice):
+   `MONDAY_API_TOKEN`, `FLASK_SECRET_KEY`, `DRY_RUN` e soprattutto
+   **`APP_SHARED_PASSPHRASE`** — obbligatoria qui, perché l'app sarà
+   raggiungibile da chiunque su internet: senza, basterebbe conoscere
+   un'email @lago.it valida per accedere come quella persona (il login non
+   ha altra password). Scegli una passphrase e comunicala solo a chi deve
+   usare l'app.
+4. Ogni push su `main` ridistribuisce automaticamente la nuova versione.
+5. Lascia `DRY_RUN=true` finché lo schema reale della board Timesheet non è
+   stato verificato (vedi sotto) — anche in produzione.
+
 ## Accesso da altri PC sulla rete Lago
 
 L'app ascolta su `0.0.0.0:5000`, quindi è raggiungibile da qualunque PC sulla
@@ -50,8 +71,11 @@ l'app è raggiungibile solo quando questo PC è acceso con `python app.py` attiv
 
 ## Decisioni di design prese (vedi CLAUDE.md §5.3 per le alternative scartate)
 
-- **Identità**: login per email monday.com, senza password (va bene per un
-  prototipo su rete interna fidata; non è autenticazione robusta).
+- **Identità**: login per email monday.com. Su rete interna fidata nessuna
+  password aggiuntiva è richiesta; se `APP_SHARED_PASSPHRASE` è valorizzata
+  (obbligatorio per il deploy pubblico, vedi sopra) va digitata anche quella.
+  Non è comunque un'autenticazione robusta: chiunque conosca sia un'email
+  @lago.it sia la passphrase condivisa accede come quella persona.
 - **"Progetti/task miei"**: task assegnati nella colonna Referente/persona di
   Project Plan Standard e dei sotto-elementi Concept.
 - **Collegamento Progetto**: dropdown separato sui progetti attivi di

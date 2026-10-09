@@ -89,6 +89,10 @@ def login():
     error = None
     if request.method == "POST":
         email = request.form.get("email", "").strip()
+        passphrase = request.form.get("passphrase", "")
+        if config.APP_SHARED_PASSPHRASE and passphrase != config.APP_SHARED_PASSPHRASE:
+            error = "Passphrase errata."
+            return render_template("login.html", error=error, require_passphrase=True)
         try:
             user = mc.get_user_by_email(email)
         except mc.MondayError as exc:
@@ -101,7 +105,7 @@ def login():
             return redirect(url_for("dashboard"))
         if not error:
             error = "Email non trovata tra gli utenti monday.com del tuo account."
-    return render_template("login.html", error=error)
+    return render_template("login.html", error=error, require_passphrase=bool(config.APP_SHARED_PASSPHRASE))
 
 
 @app.route("/logout")
